@@ -7,6 +7,11 @@ on:
 
   # ── Allow manual trigger from GitHub UI ──
   workflow_dispatch:
+    inputs:
+      level:
+        description: 'Override CEFR level for this run (A1/A2/B1/B2/C1/C2)'
+        required: false
+        default: ''
 
 jobs:
   post-word:
@@ -16,7 +21,6 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
         with:
-          # We need write access to commit progress.json back
           token: ${{ secrets.GH_PAT }}
 
       - name: 🟢 Setup Node.js
@@ -24,6 +28,16 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+
+      - name: 🖥️ Install Chromium dependencies (for Puppeteer)
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            chromium-browser \
+            libatk-bridge2.0-0 libatk1.0-0 libcups2 libdbus-1-3 \
+            libgdk-pixbuf2.0-0 libgtk-3-0 libnspr4 libnss3 \
+            libx11-xcb1 libxcomposite1 libxdamage1 libxfixes3 \
+            libxrandr2 libgbm1 libasound2
 
       - name: 📦 Install dependencies
         run: npm ci
@@ -36,33 +50,39 @@ jobs:
             tar -xzf wwebjs_auth.tar.gz -C .wwebjs_auth
             echo "✅ WhatsApp session restored."
           else
-            echo "⚠️  No WWEBJS_AUTH secret found. Will attempt fresh login (QR needed)."
+            echo "⚠️  No WWEBJS_AUTH secret. Run setup locally first!"
+            exit 1
           fi
-
-      - name: 🌍 Set CHANNEL_ID
-        run: echo "CHANNEL_ID=${{ secrets.CHANNEL_ID }}" >> $GITHUB_ENV
 
       - name: 🇩🇪 Post Word of the Day
         run: npm start
         env:
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # Level from manual trigger input overrides the secret default
+          CHANNEL_LEVEL: ${{ github.event.inputs.level || secrets.CHANNEL_LEVEL || 'A1' }}
 
-      - name: 💾 Save updated WhatsApp session
-        if: always()
+      - name: 💾 Update WWEBJS_AUTH secret (session refresh)
+        if: success()
         run: |
           if [ -d ".wwebjs_auth" ]; then
-            tar -czf wwebjs_auth.tar.gz -C .wwebjs_auth .
-            echo "WWEBJS_AUTH=$(base64 -w 0 wwebjs_auth.tar.gz)" >> $GITHUB_ENV
-            echo "✅ Session packaged."
+            tar -czf wwebjs_auth_new.tar.gz -C .wwebjs_auth .
+            NEW_AUTH=$(base64 -w 0 wwebjs_auth_new.tar.gz)
+            # Update the secret via GitHub API
+            curl -s -X PATCH \
+              -H "Authorization: token ${{ secrets.GH_PAT }}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${{ github.repository }}/actions/secrets/WWEBJS_AUTH" \
+              -d "{\"encrypted_value\":\"${NEW_AUTH}\"}" || echo "⚠️ Could not auto-update secret (needs repo admin access)"
           fi
 
       - name: 📝 Commit progress update
+        if: success()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/progress.json
-          git diff --cached --quiet || git commit -m "chore: advance to next word [skip ci]"
+          git diff --cached --quiet || git commit -m "chore: day $(cat data/progress.json | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"currentDay\"])') posted [skip ci]"
           git push
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}

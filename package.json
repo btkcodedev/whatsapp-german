@@ -6,8 +6,9 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "ts-node src/index.ts",
-    "dev": "nodemon --watch src --ext ts --exec ts-node src/index.ts",
-    "setup": "ts-node src/setup.ts"
+    "dev": "nodemon --watch src --ext ts --exec ts-node src/bot.ts",
+    "setup": "ts-node src/setup.ts",
+    "bot": "ts-node src/bot.ts"
   },
   "keywords": [],
   "author": "",
@@ -26,6 +27,7 @@
     "@types/express": "^5.0.6",
     "@types/node": "^26.1.1",
     "@types/node-cron": "^3.0.11",
+    "@types/qrcode-terminal": "^0.12.2",
     "@types/sqlite3": "^3.1.11",
     "nodemon": "^3.1.14",
     "ts-node": "^10.9.2",

@@ -1,119 +1,124 @@
-# 🚀 Deployment Guide — German A1 WhatsApp Channel Bot
+# 🚀 Deployment Guide — German A1–C2 WhatsApp Channel Bot
 
-## Overview
+## Architecture Overview
 
-This bot runs **100% free** on GitHub Actions. There is no server. Every morning GitHub's cloud runs the script, generates a German word via Gemini AI, and posts it to your WhatsApp Channel automatically.
+```
+┌─────────────────────────────────────────────────────────────┐
+│           GitHub Actions (free, no server needed)           │
+│                                                             │
+│   Cron: every day 8:00 AM IST                               │
+│   ┌─────────────────────────────────────────────────────┐   │
+│   │ 1. Restore WhatsApp session (from secret)           │   │
+│   │ 2. Call Gemini → generate today's word              │   │
+│   │    (level-aware, memory of past words, no repeats)  │   │
+│   │ 3. Post to WhatsApp Channel                         │   │
+│   │ 4. Commit progress.json back to repo                │   │
+│   └─────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│         DM Bot (npm run bot — run locally or on Railway)    │
+│                                                             │
+│   When someone DMs your WhatsApp number:                    │
+│   ├─ NEW user → asks: "What's your level? A1/A2/.../C2"     │
+│   ├─ "more"      → extra word for their level (max 3/day)   │
+│   ├─ "flashcard" → Gemini quiz on words they've learned     │
+│   ├─ "level"     → change CEFR level                        │
+│   └─ "help"      → show commands                            │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## What You Need Before Starting
+## Part 1 — Before You Start
 
-| # | Requirement | Where to get it |
+| # | What you need | Where to get it |
 |---|---|---|
-| 1 | A **dedicated WhatsApp number** | A spare SIM or a number you don't use personally |
-| 2 | A **Gemini API key** | [aistudio.google.com](https://aistudio.google.com) → "Get API Key" |
-| 3 | A **GitHub account** | [github.com/signup](https://github.com/signup) |
-| 4 | A **GitHub Personal Access Token** | See Step 4 below |
-| 5 | Node.js installed on your laptop (one-time only) | [nodejs.org](https://nodejs.org) |
+| 1 | **Dedicated WhatsApp number** | A spare SIM — do NOT use your personal number |
+| 2 | **Gemini API key** (free) | [aistudio.google.com](https://aistudio.google.com) → Get API Key |
+| 3 | **GitHub account** | [github.com/signup](https://github.com/signup) |
+| 4 | **GitHub Personal Access Token** | See Step 3 below |
+| 5 | **Node.js 20+** (one-time, local) | [nodejs.org](https://nodejs.org) |
 
 ---
 
-## Step 1 — Create Your WhatsApp Channel
+## Part 2 — One-Time Local Setup
 
-> Do this on your **dedicated WhatsApp number**, not your personal one.
+### Step 1 — Create your WhatsApp Channel
 
-1. Open WhatsApp on that number
-2. Tap the **Channels** tab (megaphone icon at the bottom)
-3. Tap **"+"** → **"Create channel"**
-4. Give it a name: e.g. `🇩🇪 German A1 Daily`
-5. After creating, tap the channel name at the top → **"Invite via link"**
-6. Your link will look like:
-   ```
-   https://whatsapp.com/channel/0ABCxyz123456789
-   ```
-7. **Copy the part after `/channel/`** — that is your `CHANNEL_ID`:
-   ```
-   0ABCxyz123456789
-   ```
-   Save this. You'll need it soon.
+1. Open WhatsApp on your **dedicated number**
+2. Tap **Channels** (megaphone icon) → **"+"** → **"Create channel"**
+3. Name it: e.g. `🇩🇪 German Daily Words`
+4. After creating → tap channel name → **"Invite via link"**
+5. Your link: `https://whatsapp.com/channel/0ABCxyz123456789`
+6. **Copy everything after `/channel/`** → that is your `CHANNEL_ID`
 
 ---
 
-## Step 2 — Get Your Gemini API Key (Free)
+### Step 2 — Get a free Gemini API Key
 
 1. Go to [aistudio.google.com](https://aistudio.google.com)
 2. Sign in with any Google account
-3. Click **"Get API key"** in the top left
-4. Click **"Create API key"** → select any project
-5. Copy the key (looks like `AIzaSy...`)
+3. Click **"Get API key"** → **"Create API key"**
+4. Copy the key (looks like `AIzaSy...`)
 
-> ✅ The free tier gives you **1,500 requests/day** — we use 1 per day. No credit card needed.
+> Free tier: **1,500 requests/day** — we use 1 per day. No credit card needed.
 
 ---
 
-## Step 3 — One-Time Local Setup (Scan QR Code)
+### Step 3 — Create a GitHub Personal Access Token (PAT)
 
-This step runs **once on your laptop** to link the bot to your WhatsApp account. After this, GitHub Actions takes over forever.
+1. Go to [github.com/settings/tokens](https://github.com/settings/tokens)
+2. Click **"Generate new token (classic)"**
+3. Name: `whatsapp-german-bot`
+4. Expiration: **No expiration**
+5. Scopes — tick **only**:
+   - ✅ `repo` (full repository access)
+6. Click **"Generate token"** → **copy it immediately** (shown only once!)
+
+---
+
+### Step 4 — Authenticate WhatsApp (QR scan)
 
 ```bash
-# In the project folder:
+cd whatsapp-german
 npm install
 npm run setup
 ```
 
-A **browser window will open** showing a QR code.
-
-1. Open WhatsApp on your dedicated number
+A browser window opens. When you see the QR code:
+1. Open WhatsApp on your **dedicated number**
 2. Go to **Settings → Linked Devices → Link a Device**
 3. Scan the QR code
-4. Wait for it to say **"✅ WhatsApp connected!"**
+4. Wait for `✅ WhatsApp connected!`
 
-The script will then print a **long block of text** like this in your terminal:
+The terminal will then print a **very long base64 string**:
 
 ```
-══════════════════════════════════════════════════════════════
-📋 COPY THIS BASE64 STRING AND SAVE IT AS GITHUB SECRET: WWEBJS_AUTH
-══════════════════════════════════════════════════════════════
-H4sIAAAAAAAAA+2Y32/aMBDH/5WK... (very long string)
-══════════════════════════════════════════════════════════════
+══════════════════════════════════════════════
+📋 COPY THIS → save as GitHub Secret: WWEBJS_AUTH
+══════════════════════════════════════════════
+H4sIAAAAAAAAA+2Y32/aMBDH/5WK... (very long)
+══════════════════════════════════════════════
 ```
 
-**Copy that entire string.** You'll need it in Step 5.
+**Copy the entire string** — you'll need it in Step 6.
 
 ---
 
-## Step 4 — Create a GitHub Personal Access Token (PAT)
-
-The bot needs to write `progress.json` back to your repo after each post.
-
-1. Go to [github.com/settings/tokens](https://github.com/settings/tokens)
-2. Click **"Generate new token (classic)"**
-3. Give it a name: `whatsapp-german-bot`
-4. Set expiration: **No expiration** (or 1 year if you prefer)
-5. Under **Scopes**, tick only:
-   - ✅ `repo` (full control of private repositories)
-6. Click **"Generate token"**
-7. **Copy the token** (looks like `ghp_xxxxxxxxxxxx`) — GitHub shows it only once!
-
----
-
-## Step 5 — Push the Code to GitHub
+### Step 5 — Push to GitHub
 
 ```bash
-# In the project folder:
 git init
 git add .
-git commit -m "feat: initial german bot setup"
+git commit -m "feat: german bot initial setup"
 ```
 
-Now create a new **empty** repository on GitHub:
-1. Go to [github.com/new](https://github.com/new)
-2. Name it `whatsapp-german`
-3. Make it **Private** (recommended — your session data is sensitive)
-4. Do **NOT** check "Add README" or any other file — keep it empty
-5. Copy the repo URL (e.g. `https://github.com/YOUR_USERNAME/whatsapp-german.git`)
+On GitHub → [github.com/new](https://github.com/new):
+- Name: `whatsapp-german`
+- Visibility: **Private** ⚠️ (your session data is sensitive)
+- Do NOT add README or .gitignore — keep it empty
 
-Then push:
 ```bash
 git remote add origin https://github.com/YOUR_USERNAME/whatsapp-german.git
 git branch -M main
@@ -122,53 +127,62 @@ git push -u origin main
 
 ---
 
-## Step 6 — Add Secrets to GitHub
+## Part 3 — GitHub Secrets Setup
 
-> This is where all your tokens go. GitHub encrypts them so they're never visible again.
+> **Settings → Secrets and variables → Actions → New repository secret**
 
-Go to your repo on GitHub → **Settings** → **Secrets and variables** → **Actions** → **"New repository secret"**
-
-Add these **4 secrets** one by one:
+Add all **5 secrets**:
 
 ---
 
-### Secret 1: `GEMINI_API_KEY`
-| Field | Value |
+### 🔑 Secret 1: `GEMINI_API_KEY`
+| | |
 |---|---|
 | **Name** | `GEMINI_API_KEY` |
-| **Secret** | Your Gemini API key from Step 2 (e.g. `AIzaSy...`) |
+| **Value** | Your key from Step 2, e.g. `AIzaSyxxxxxxxxxxxxxxx` |
 
 ---
 
-### Secret 2: `CHANNEL_ID`
-| Field | Value |
+### 🔑 Secret 2: `CHANNEL_ID`
+| | |
 |---|---|
 | **Name** | `CHANNEL_ID` |
-| **Secret** | Your WhatsApp Channel ID from Step 1 (e.g. `0ABCxyz123456789`) |
+| **Value** | The ID from your channel link, e.g. `0ABCxyz123456789` |
 
 ---
 
-### Secret 3: `WWEBJS_AUTH`
-| Field | Value |
+### 🔑 Secret 3: `CHANNEL_LEVEL`
+| | |
+|---|---|
+| **Name** | `CHANNEL_LEVEL` |
+| **Value** | `A1` (or A2/B1/B2/C1/C2 — what level your channel posts at) |
+
+> This is for the **public channel** posts. Individual users who DM the bot pick their own level separately.
+
+---
+
+### 🔑 Secret 4: `WWEBJS_AUTH`
+| | |
 |---|---|
 | **Name** | `WWEBJS_AUTH` |
-| **Secret** | The long base64 string printed in your terminal during Step 3 |
+| **Value** | The long base64 string printed in your terminal during Step 4 |
 
 ---
 
-### Secret 4: `GH_PAT`
-| Field | Value |
+### 🔑 Secret 5: `GH_PAT`
+| | |
 |---|---|
 | **Name** | `GH_PAT` |
-| **Secret** | Your GitHub Personal Access Token from Step 4 (e.g. `ghp_xxxx...`) |
+| **Value** | Your GitHub Personal Access Token from Step 3, e.g. `ghp_xxxx...` |
 
 ---
 
-After adding all 4, your secrets page should look like this:
+After adding all 5, your secrets page should look like:
 
 ```
 Repository secrets
 ├── CHANNEL_ID          Updated just now
+├── CHANNEL_LEVEL       Updated just now
 ├── GEMINI_API_KEY      Updated just now
 ├── GH_PAT              Updated just now
 └── WWEBJS_AUTH         Updated just now
@@ -176,44 +190,65 @@ Repository secrets
 
 ---
 
-## Step 7 — Test It Manually
+## Part 4 — Test & Go Live
 
-Don't wait until 8 AM. Trigger it right now:
+### Test the channel poster (GitHub Actions)
 
-1. Go to your repo on GitHub
-2. Click the **"Actions"** tab
-3. Click **"🇩🇪 German Word of the Day"** in the left sidebar
-4. Click **"Run workflow"** → **"Run workflow"** (green button)
-5. Watch the logs — it should post a word to your channel!
+1. Go to your repo → **Actions** tab
+2. Click **"🇩🇪 German Word of the Day"** in the left sidebar
+3. Click **"Run workflow"** → **"Run workflow"** (green button)
+4. Watch the logs — you should see a post appear in your WhatsApp Channel!
 
-If it fails, click the failed run → click **"post-word"** → read the log to see what went wrong.
+You can also override the level for a single run:
+- Click **"Run workflow"** → type `B1` in the level field → run
 
 ---
 
-## Schedule
+### Run the DM bot locally (interactive features)
 
-The bot runs automatically at:
-
-| Time | Timezone |
-|---|---|
-| 8:00 AM | IST (India Standard Time) |
-| 2:30 AM | UTC |
-
-To change the time, edit `.github/workflows/daily-word.yml` line 6:
-```yaml
-- cron: '30 2 * * *'   # ← change this (UTC time, format: minute hour * * *)
+```bash
+npm run bot
 ```
 
-Use [crontab.guru](https://crontab.guru) to build your cron expression.
+Now DM your WhatsApp number from any phone. The bot will:
+1. Ask you to pick your level (A1–C2)
+2. Respond to `more`, `flashcard`, `level`, `help`
 
 ---
 
-## Troubleshooting
+## Part 5 — Schedule & Commands Reference
+
+### GitHub Actions schedule
+Runs automatically at **8:00 AM IST** (02:30 UTC) every day.
+
+To change: edit `.github/workflows/daily-word.yml` line 6:
+```yaml
+- cron: '30 2 * * *'   # UTC: minute hour * * *
+```
+Use [crontab.guru](https://crontab.guru) to build the expression.
+
+---
+
+### DM Bot commands (for followers who message your number)
+
+| Command | What it does |
+|---|---|
+| _(first message)_ | Triggers welcome + level picker |
+| `more` | Extra word at their level (max 3/day) |
+| `flashcard` | Gemini quiz on past words (smart — targets weak spots) |
+| `level` | Change CEFR level (A1–C2), history is preserved |
+| `help` | Show all commands |
+
+---
+
+## Part 6 — Troubleshooting
 
 | Problem | Fix |
 |---|---|
-| "CHANNEL_ID is not set" | Check the `CHANNEL_ID` secret in GitHub Settings → Secrets |
-| "GEMINI_API_KEY is not set" | Check the `GEMINI_API_KEY` secret |
-| "Authentication failed" | Your WhatsApp session expired. Re-run `npm run setup` locally, copy the new base64, update `WWEBJS_AUTH` secret |
-| Bot doesn't post but logs show success | Make sure the WhatsApp number that owns the channel is the same one you scanned with |
-| Workflow doesn't run at schedule | GitHub can delay scheduled workflows by up to 30 min. Use "Run workflow" manually to test |
+| "CHANNEL_ID is not set" | Check `CHANNEL_ID` secret in GitHub → Settings → Secrets |
+| "GEMINI_API_KEY is not set" | Check `GEMINI_API_KEY` secret |
+| "Auth failure" / session expired | Re-run `npm run setup` locally → copy new base64 → update `WWEBJS_AUTH` secret |
+| Workflow fails on Chromium step | Ubuntu dependency issue — check the Actions log for which apt package is missing |
+| Bot posts wrong level | Check `CHANNEL_LEVEL` secret; or set it manually on the "Run workflow" popup |
+| DM bot doesn't respond | Make sure `npm run bot` is running and the same WhatsApp number is linked |
+| Workflow doesn't run on schedule | GitHub can delay cron by up to 30 min. Test with "Run workflow" button first |
