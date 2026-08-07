@@ -14,6 +14,7 @@
 import { Client, LocalAuth, Message } from 'whatsapp-web.js';
 import qrcode from 'qrcode-terminal';
 import dotenv from 'dotenv';
+import express from 'express';
 import {
   getUser, createUser, updateUser,
   saveWordHistory, getWordHistory, getWeakWords,
@@ -26,6 +27,47 @@ import {
 } from './vocabulary';
 
 dotenv.config();
+
+// ─── Health Check Server for Render ───────────────────────────────────────
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    service: 'whatsapp-german-bot',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+
+app.listen(PORT, () => {
+  console.log(`🔧 Health check server running on port ${PORT}`);
+});
+
+// ─── WhatsApp Session Restoration for Render ──────────────────────────────
+
+async function restoreSession() {
+  const authData = process.env.WWEBJS_AUTH;
+  if (authData && process.env.NODE_ENV === 'production') {
+    try {
+      const { execSync } = require('child_process');
+      const fs = require('fs');
+      
+      // Create auth directory if it doesn't exist
+      if (!fs.existsSync('.wwebjs_auth')) {
+        fs.mkdirSync('.wwebjs_auth', { recursive: true });
+      }
+      
+      // Restore session from base64
+      execSync(`echo "${authData}" | base64 -d | tar -xzf - -C .wwebjs_auth`);
+      console.log('✅ WhatsApp session restored from environment');
+    } catch (error) {
+      console.log('⚠️ Could not restore session, will need QR scan:', error.message);
+    }
+  }
+}
 
 const MAX_EXTRA_WORDS = 3;
 const VALID_LEVELS: CEFRLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
@@ -58,9 +100,33 @@ client.on('qr', (qr) => {
 
 client.on('ready', () => {
   console.log('✅ DM Bot is online and ready!');
+  console.log('📱 WhatsApp Web session is active');
+  console.log('🔗 Health check available at /health');
 });
 
-client.on('auth_failure', (msg) => console.error('❌ Auth failure:', msg));
+client.on('auth_failure', async (msg) => {
+  console.error('❌ Auth failure:', msg);
+  console.log('🔄 Session expired. Please re-run setup locally and update WWEBJS_AUTH');
+  
+  // In production, log the error but don't crash
+  if (process.env.NODE_ENV === 'production') {
+    console.log('⚠️ Production mode: Service will restart and try again');
+    process.exit(1); // Let Render restart the service
+  }
+});
+
+client.on('disconnected', (reason) => {
+  console.log('📱 WhatsApp disconnected:', reason);
+  
+  if (reason === 'LOGOUT') {
+    console.log('🚨 WhatsApp session was logged out manually from phone');
+    console.log('📋 Please re-run setup locally and update WWEBJS_AUTH');
+    
+    if (process.env.NODE_ENV === 'production') {
+      process.exit(1); // Let Render restart
+    }
+  }
+});
 
 // ─── Message Handler ───────────────────────────────────────────────────────
 
@@ -214,4 +280,11 @@ client.on('message', async (msg: Message) => {
   }
 });
 
-client.initialize();
+// ─── Initialize Bot ────────────────────────────────────────────────────────
+
+async function startBot() {
+  await restoreSession();
+  client.initialize();
+}
+
+startBot().catch(console.error);
