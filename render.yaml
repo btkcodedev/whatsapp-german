@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: whatsapp-german
+    env: node
+    buildCommand: npm install
+    startCommand: npm run bot
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: CHANNEL_ID
+        sync: false
+    disk:
+      name: whatsapp-data
+      mountPath: /data
+      sizeGB: 1
