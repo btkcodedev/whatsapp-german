@@ -5,10 +5,10 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "ts-node src/index.ts",
-    "dev": "nodemon --watch src --ext ts --exec ts-node src/bot.ts",
-    "setup": "ts-node src/setup.ts",
-    "bot": "ts-node src/bot.ts"
+    "start": "tsx src/index.ts",
+    "dev": "nodemon --watch src --ext ts --exec tsx src/bot.ts",
+    "setup": "tsx src/setup.ts",
+    "bot": "tsx src/bot.ts"
   },
   "keywords": [],
   "author": "",
