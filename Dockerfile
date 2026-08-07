@@ -36,5 +36,5 @@ RUN mkdir -p /app/data
 # Expose health check port
 EXPOSE 3000
 
-# Run the bot
-CMD ["npm", "run", "bot"]
+# Run the unified bot (handles both DM and channel posts)
+CMD ["npm", "run", "unified"]

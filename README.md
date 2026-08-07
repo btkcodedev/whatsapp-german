@@ -21,19 +21,23 @@ An intelligent WhatsApp bot that teaches German vocabulary through daily words a
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    GitHub Actions (Free)                    │
-│              Daily Channel Posts at 8:00 AM IST            │
-└─────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   WhatsApp Channel                         │
-│              📚 Daily German Word Posts                    │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│                  Render.com (DM Bot)                       │
-│              🤖 Interactive User Features                   │
+│                  Render/Railway/VPS                         │
+│             Single Bot Process (24/7)                       │
+│                                                             │
+│  ┌────────────────────────────────────────────────────┐    │
+│  │  📅 Scheduled Channel Posts (node-cron)            │    │
+│  │     • Posts daily at 8:00 AM IST                   │    │
+│  │     • AI-generated CEFR-appropriate words          │    │
+│  │                                                     │    │
+│  │  💬 Interactive DM Bot (event-driven)              │    │
+│  │     • User onboarding & level selection            │    │
+│  │     • Extra words on demand                        │    │
+│  │     • AI-powered flashcards                        │    │
+│  │                                                     │    │
+│  │  💾 Persistent Session                             │    │
+│  │     • WhatsApp auth stored on disk                 │    │
+│  │     • SQLite database for user data                │    │
+│  └────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -43,9 +47,8 @@ An intelligent WhatsApp bot that teaches German vocabulary through daily words a
 - **WhatsApp**: whatsapp-web.js with Puppeteer
 - **AI**: Google Gemini 1.5 Flash (free tier)
 - **Database**: SQLite with better-sqlite3
-- **Deployment**: 
-  - GitHub Actions (channel automation)
-  - Render.com (DM bot hosting)
+- **Deployment**: Render.com or Railway.app (single service)
+- **Scheduling**: node-cron (built-in)
 - **Docker**: Alpine-based container for production
 
 ## 📋 Prerequisites
@@ -54,9 +57,8 @@ Before you begin, you'll need:
 
 1. **Dedicated WhatsApp number** (don't use your personal number)
 2. **Google Gemini API key** (free at [aistudio.google.com](https://aistudio.google.com))
-3. **GitHub account** for automation
-4. **Render.com account** for bot hosting (free tier available)
-5. **Node.js 20+** for local development
+3. **Render.com or Railway.app account** (free tier available)
+4. **Node.js 20+** for local development
 
 ## 📚 Documentation
 
@@ -112,17 +114,7 @@ npm run setup
 
 **Important**: Save the base64 string output - you'll need it for deployment!
 
-### 5. GitHub Actions Setup
-
-Add these secrets in your GitHub repository (Settings → Secrets → Actions):
-
-- `GEMINI_API_KEY` - Your Gemini API key
-- `CHANNEL_ID` - Your WhatsApp channel ID  
-- `CHANNEL_LEVEL` - Default level (A1-C2)
-- `WWEBJS_AUTH` - Base64 string from setup step
-- `GH_PAT` - GitHub Personal Access Token (repo permissions)
-
-### 6. Render Deployment
+### 5. Render Deployment (ONE SERVICE FOR EVERYTHING)
 
 1. **Connect Repository**: Link your GitHub repo to Render
 2. **Configure Service**: 
@@ -132,7 +124,24 @@ Add these secrets in your GitHub repository (Settings → Secrets → Actions):
 3. **Set Environment Variables**:
    - `NODE_ENV=production`
    - `GEMINI_API_KEY` (your API key)
+   - `CHANNEL_ID` (your WhatsApp channel ID)
+   - `CHANNEL_LEVEL` (A1-C2, default A1)
    - `WWEBJS_AUTH` (base64 string from setup)
+4. **Enable Persistent Disk** (IMPORTANT):
+   - Name: `whatsapp-auth-disk`
+   - Mount path: `/app/.wwebjs_auth`
+   - Size: 1GB
+
+### 6. First-Time Authentication on Render
+
+After deployment, you'll need to authenticate **once**:
+
+1. **Check Render logs** for QR code instructions
+2. **Or**: Use Render Shell to run `npm run setup`
+3. **Scan QR code** with your dedicated WhatsApp number
+4. Session will persist on the mounted disk
+
+**Alternative**: Set WWEBJS_AUTH initially, service will restore from it.
 
 ## 📱 User Commands
 

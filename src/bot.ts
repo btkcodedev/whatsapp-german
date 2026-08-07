@@ -15,6 +15,9 @@ import { Client, LocalAuth, Message } from 'whatsapp-web.js';
 import qrcode from 'qrcode-terminal';
 import dotenv from 'dotenv';
 import express from 'express';
+import cron from 'node-cron';
+import fs from 'fs';
+import path from 'path';
 import {
   getUser, createUser, updateUser,
   saveWordHistory, getWordHistory, getWeakWords,
@@ -50,22 +53,39 @@ app.listen(PORT, () => {
 
 async function restoreSession() {
   const authData = process.env.WWEBJS_AUTH;
-  if (authData && process.env.NODE_ENV === 'production') {
-    try {
-      const { execSync } = require('child_process');
-      const fs = require('fs');
-      
-      // Create auth directory if it doesn't exist
-      if (!fs.existsSync('.wwebjs_auth')) {
-        fs.mkdirSync('.wwebjs_auth', { recursive: true });
-      }
-      
-      // Restore session from base64
-      execSync(`echo "${authData}" | base64 -d | tar -xzf - -C .wwebjs_auth`);
-      console.log('✅ WhatsApp session restored from environment');
-    } catch (error) {
-      console.log('⚠️ Could not restore session, will need QR scan:', error.message);
+  
+  // Only restore in production and if WWEBJS_AUTH exists
+  if (!authData || process.env.NODE_ENV !== 'production') {
+    console.log('⚠️  No WWEBJS_AUTH found or not in production mode');
+    console.log('📱 Will use local session or show QR code for authentication');
+    return;
+  }
+  
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    
+    // Create auth directory if it doesn't exist
+    const authDir = '.wwebjs_auth';
+    if (!fs.existsSync(authDir)) {
+      fs.mkdirSync(authDir, { recursive: true });
     }
+    
+    // Write base64 to temp file first (avoid command line length limits)
+    const tempFile = path.join(authDir, 'temp_session.tar.gz');
+    fs.writeFileSync(tempFile, Buffer.from(authData, 'base64'));
+    
+    // Extract from temp file
+    const { execSync } = require('child_process');
+    execSync(`tar -xzf ${tempFile} -C ${authDir}`);
+    
+    // Clean up temp file
+    fs.unlinkSync(tempFile);
+    
+    console.log('✅ WhatsApp session restored from environment');
+  } catch (error) {
+    console.log('⚠️  Could not restore session:', error.message);
+    console.log('📱 Will show QR code for authentication');
   }
 }
 
@@ -286,5 +306,90 @@ async function startBot() {
   await restoreSession();
   client.initialize();
 }
+
+// ─── Scheduled Channel Posting ─────────────────────────────────────────────
+
+const PROGRESS_FILE = path.resolve('data/progress.json');
+
+interface ChannelProgress {
+  currentDay: number;
+  level: CEFRLevel;
+  wordsUsed: Array<{ german: string; english: string; topic: string; day_number: number }>;
+}
+
+function getChannelProgress(): ChannelProgress {
+  if (fs.existsSync(PROGRESS_FILE)) {
+    return JSON.parse(fs.readFileSync(PROGRESS_FILE, 'utf8'));
+  }
+  return { 
+    currentDay: 1, 
+    level: (process.env.CHANNEL_LEVEL as CEFRLevel) || 'A1', 
+    wordsUsed: [] 
+  };
+}
+
+function saveChannelProgress(p: ChannelProgress) {
+  const dir = path.dirname(PROGRESS_FILE);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(PROGRESS_FILE, JSON.stringify(p, null, 2));
+}
+
+// Schedule daily channel post at 8:00 AM IST (2:30 AM UTC)
+cron.schedule('30 2 * * *', async () => {
+  console.log('⏰ Scheduled channel post triggered');
+  await postToChannel();
+}, {
+  timezone: 'Asia/Kolkata'
+});
+
+async function postToChannel() {
+  const CHANNEL_ID = process.env.CHANNEL_ID;
+  
+  if (!CHANNEL_ID) {
+    console.log('⚠️ CHANNEL_ID not set, skipping channel post');
+    return;
+  }
+
+  try {
+    const progress = getChannelProgress();
+    const level: CEFRLevel = (process.env.CHANNEL_LEVEL as CEFRLevel) || progress.level || 'A1';
+
+    console.log(`📝 Generating Day ${progress.currentDay} word for level ${level}...`);
+    const word = await generateWord(progress.currentDay, level, progress.wordsUsed);
+    const message = formatWordMessage(word);
+
+    console.log(`📖 Word: "${word.german}" (${word.english})`);
+
+    // Post to channel
+    const channel = await (client as any).getChannelByInviteCode(CHANNEL_ID);
+    await channel.sendMessage(message);
+    
+    console.log('✅ Posted to channel successfully!');
+
+    // Update progress
+    progress.wordsUsed.push({
+      german: word.german,
+      english: word.english,
+      topic: word.topic,
+      day_number: progress.currentDay,
+    });
+    progress.currentDay++;
+    progress.level = level;
+    saveChannelProgress(progress);
+
+  } catch (error: any) {
+    console.error('❌ Failed to post to channel:', error.message);
+  }
+}
+
+// Manual trigger endpoint for testing
+app.post('/api/post-channel', async (req, res) => {
+  try {
+    await postToChannel();
+    res.json({ success: true, message: 'Channel post triggered' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 startBot().catch(console.error);

@@ -9,8 +9,10 @@
     "dev": "nodemon --watch src --ext ts --exec tsx src/bot.ts",
     "setup": "tsx src/setup.ts",
     "bot": "tsx src/bot.ts",
+    "unified": "tsx src/unified-bot.ts",
     "reauth": "node scripts/reauth.js",
-    "check": "node scripts/check-health.js"
+    "check": "node scripts/check-health.js",
+    "backup": "node scripts/backup-session.js"
   },
   "keywords": [],
   "author": "",
