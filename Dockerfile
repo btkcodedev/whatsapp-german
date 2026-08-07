@@ -1,7 +1,7 @@
 # Use Node.js 20 Alpine for smaller image size
 FROM node:20-alpine
 
-# Install necessary packages for Puppeteer
+# Install Chromium and required dependencies
 RUN apk add --no-cache \
     chromium \
     nss \
@@ -10,16 +10,19 @@ RUN apk add --no-cache \
     harfbuzz \
     ca-certificates \
     ttf-freefont \
+    udev \
+    ttf-dejavu \
     && rm -rf /var/cache/apk/*
 
-# Set Puppeteer to use installed Chromium
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+# Configure Puppeteer to use system Chromium
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser \
+    CHROME_BIN=/usr/bin/chromium-browser
 
 # Create app directory
 WORKDIR /app
 
-# Copy package files
+# Copy package files first for better caching
 COPY package*.json ./
 
 # Install production dependencies
@@ -28,13 +31,11 @@ RUN npm ci --only=production
 # Copy source code
 COPY . .
 
-# Create data directory for persistent storage
-RUN mkdir -p /app/data
-
-# NOTE: /app/.wwebjs_auth will be mounted from Render persistent disk
+# Create directories for persistent storage
+RUN mkdir -p /app/data /app/.wwebjs_auth
 
 # Expose health check port
 EXPOSE 3000
 
-# Run the unified bot (handles both DM and channel posts)
-CMD ["npm", "run", "unified"]
+# Run the bot
+CMD ["npm", "run", "bot"]

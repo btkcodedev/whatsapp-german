@@ -2,7 +2,7 @@
 .wwebjs_auth/*
 !.wwebjs_auth/.gitkeep
 .wwebjs_cache/
-wwebjs_auth*
+# wwebjs_auth*
 
 # Environment & Secrets  
 .env

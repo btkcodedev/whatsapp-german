@@ -54,11 +54,23 @@ app.listen(PORT, () => {
 async function restoreSession() {
   const authData = process.env.WWEBJS_AUTH;
   
-  // Only restore in production and if WWEBJS_AUTH exists
-  if (!authData || process.env.NODE_ENV !== 'production') {
-    console.log('⚠️  No WWEBJS_AUTH found or not in production mode');
-    console.log('📱 Will use local session or show QR code for authentication');
-    return;
+  console.log('🔍 Session Restoration Check:');
+  console.log('   NODE_ENV:', process.env.NODE_ENV || 'not set');
+  console.log('   WWEBJS_AUTH:', authData ? `SET (${authData.length} chars)` : 'NOT SET ❌');
+  
+  if (!authData) {
+    console.log('\n⚠️  CRITICAL: WWEBJS_AUTH environment variable is missing!');
+    console.log('📋 To fix this:');
+    console.log('   1. Run "npm run setup" locally');
+    console.log('   2. Copy the base64 token');
+    console.log('   3. Add it to Render Environment Variables');
+    console.log('   4. Redeploy the service\n');
+    
+    if (process.env.NODE_ENV === 'production') {
+      console.log('❌ Cannot run in production without WWEBJS_AUTH');
+      console.log('   (Headless mode cannot display QR codes)\n');
+    }
+    return false;
   }
   
   try {
@@ -68,24 +80,29 @@ async function restoreSession() {
     // Create auth directory if it doesn't exist
     const authDir = '.wwebjs_auth';
     if (!fs.existsSync(authDir)) {
+      console.log('📁 Creating auth directory...');
       fs.mkdirSync(authDir, { recursive: true });
     }
     
     // Write base64 to temp file first (avoid command line length limits)
     const tempFile = path.join(authDir, 'temp_session.tar.gz');
+    console.log('📦 Decoding session data...');
     fs.writeFileSync(tempFile, Buffer.from(authData, 'base64'));
     
     // Extract from temp file
     const { execSync } = require('child_process');
+    console.log('📂 Extracting session files...');
     execSync(`tar -xzf ${tempFile} -C ${authDir}`);
     
     // Clean up temp file
     fs.unlinkSync(tempFile);
     
-    console.log('✅ WhatsApp session restored from environment');
+    console.log('✅ WhatsApp session restored successfully!\n');
+    return true;
   } catch (error) {
-    console.log('⚠️  Could not restore session:', error.message);
-    console.log('📱 Will show QR code for authentication');
+    console.error('❌ Session restoration failed:', error.message);
+    console.log('📋 Please run "npm run reauth" locally and update WWEBJS_AUTH\n');
+    return false;
   }
 }
 
