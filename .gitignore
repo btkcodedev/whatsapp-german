@@ -4,3 +4,4 @@ node_modules/
 data/database.sqlite
 .env
 dist/
+wwebjs_auth*

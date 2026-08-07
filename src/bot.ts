@@ -39,7 +39,15 @@ const client = new Client({
   authStrategy: new LocalAuth({ dataPath: '.wwebjs_auth' }),
   puppeteer: {
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--no-first-run',
+      '--no-zygote',
+      '--single-process',
+    ],
   },
 });
 
@@ -66,17 +74,17 @@ client.on('message', async (msg: Message) => {
   const bodyLower = body.toLowerCase();
 
   try {
-    let user = await getUser(from);
+    let user = getUser(from);
 
     // ── Auto-register ──────────────────────────────────────────────────────
     if (!user) {
-      await createUser(from);
-      user = await getUser(from);
+      createUser(from);
+      user = getUser(from);
     }
 
     // ── State: NEW → send welcome + level picker ───────────────────────────
     if (user.state === 'NEW') {
-      await updateUser(from, { state: 'AWAITING_LEVEL' });
+      updateUser(from, { state: 'AWAITING_LEVEL' });
       await msg.reply(
         `🇩🇪 *Willkommen! Welcome to German Daily Words!*\n\n` +
         `I post a new German word every morning to the channel — and you can DM me for extras and flashcards.\n\n` +
@@ -99,7 +107,7 @@ client.on('message', async (msg: Message) => {
         await msg.reply(`Please reply with one of: A1, A2, B1, B2, C1, or C2.`);
         return;
       }
-      await updateUser(from, { level: chosen, state: 'ACTIVE' });
+      updateUser(from, { level: chosen, state: 'ACTIVE' });
       await msg.reply(
         `✅ Level set to *${chosen}*!\n\n` +
         `You'll receive a new *${chosen}*-level word every morning in the channel.\n\n` +
@@ -121,7 +129,7 @@ client.on('message', async (msg: Message) => {
       pendingFlashcards.delete(from);
       const normalized = (s: string) => s.trim().toLowerCase().replace(/[^\w\säöü]/gi, '');
       const correct = normalized(body) === normalized(card.answer);
-      await saveFlashcardAttempt(from, card.german, correct);
+      saveFlashcardAttempt(from, card.german, correct);
       await msg.reply(formatFlashcardResult(card, body));
       return;
     }
@@ -129,7 +137,7 @@ client.on('message', async (msg: Message) => {
     // ── Commands ───────────────────────────────────────────────────────────
 
     if (bodyLower === 'level') {
-      await updateUser(from, { state: 'AWAITING_LEVEL' });
+      updateUser(from, { state: 'AWAITING_LEVEL' });
       await msg.reply(
         `What level would you like to switch to?\n\n` +
         `▸ A1 | A2 | B1 | B2 | C1 | C2\n\n` +
@@ -151,7 +159,7 @@ client.on('message', async (msg: Message) => {
 
     if (['more', 'extra', 'weiter', 'next', 'mehr'].includes(bodyLower)) {
       const today = new Date().toISOString().split('T')[0];
-      const dailyReqs = await getDailyRequests(from, today);
+      const dailyReqs = getDailyRequests(from, today);
       const reqCount = dailyReqs?.request_count ?? 0;
 
       if (reqCount >= MAX_EXTRA_WORDS) {
@@ -162,13 +170,13 @@ client.on('message', async (msg: Message) => {
         return;
       }
 
-      const history = await getWordHistory(from, 60);
+      const history = getWordHistory(from, 60);
       const nextDay = user.current_day + 1;
       const word = await generateWord(nextDay, user.level as CEFRLevel, history);
 
-      await incrementDailyRequests(from, today);
-      await updateUser(from, { current_day: nextDay });
-      await saveWordHistory(from, nextDay, word.german, word.english, word.topic, word.level);
+      incrementDailyRequests(from, today);
+      updateUser(from, { current_day: nextDay });
+      saveWordHistory(from, nextDay, word.german, word.english, word.topic, word.level);
 
       const remaining = MAX_EXTRA_WORDS - (reqCount + 1);
       const suffix =
@@ -181,7 +189,7 @@ client.on('message', async (msg: Message) => {
     }
 
     if (['flashcard', 'quiz', 'test', 'üben'].includes(bodyLower)) {
-      const history = await getWordHistory(from, 60);
+      const history = getWordHistory(from, 60);
       if (history.length === 0) {
         await msg.reply(
           `You haven't learned any words yet! Reply *more* to get your first word, or wait for tomorrow's daily word. 📚`
@@ -189,7 +197,7 @@ client.on('message', async (msg: Message) => {
         return;
       }
 
-      const weakWords = await getWeakWords(from, 10);
+      const weakWords = getWeakWords(from, 10);
       const card = await generateFlashcard(history, weakWords, user.level as CEFRLevel);
       pendingFlashcards.set(from, card);
       await msg.reply(formatFlashcardQuestion(card));
