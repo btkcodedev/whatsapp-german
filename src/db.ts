@@ -8,7 +8,7 @@ if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
 const dbPath = path.resolve(dbDir, 'database.sqlite');
 
 // better-sqlite3 is synchronous by default — simpler API
-export const db = new Database(dbPath);
+export const db: Database.Database = new Database(dbPath);
 
 console.log('✅ Connected to SQLite database (better-sqlite3).');
 initSchema();
@@ -53,8 +53,33 @@ function initSchema() {
 
 // ─── Helpers (synchronous, return values directly) ────────────────────────
 
-export const getUser = (phoneNumber: string) => {
-  return db.prepare('SELECT * FROM users WHERE phone_number = ?').get(phoneNumber);
+interface User {
+  phone_number: string;
+  level: string;
+  state: string;
+  current_day: number;
+  subscribed_at: string;
+}
+
+interface WordHistory {
+  id: number;
+  phone_number: string;
+  day_number: number;
+  german: string;
+  english: string;
+  topic: string;
+  level: string;
+  taught_at: string;
+}
+
+interface DailyRequest {
+  phone_number: string;
+  request_date: string;
+  request_count: number;
+}
+
+export const getUser = (phoneNumber: string): User | undefined => {
+  return db.prepare('SELECT * FROM users WHERE phone_number = ?').get(phoneNumber) as User | undefined;
 };
 
 export const createUser = (phoneNumber: string) => {
@@ -81,11 +106,18 @@ export const saveWordHistory = (
   ).run(phoneNumber, dayNumber, german, english, topic, level);
 };
 
-export const getWordHistory = (phoneNumber: string, limit = 100) => {
-  return db.prepare('SELECT * FROM word_history WHERE phone_number = ? ORDER BY taught_at DESC LIMIT ?').all(phoneNumber, limit);
+export const getWordHistory = (phoneNumber: string, limit = 100): WordHistory[] => {
+  return db.prepare('SELECT * FROM word_history WHERE phone_number = ? ORDER BY taught_at DESC LIMIT ?').all(phoneNumber, limit) as WordHistory[];
 };
 
-export const getWeakWords = (phoneNumber: string, limit = 20) => {
+interface WeakWord {
+  german: string;
+  english: string;
+  topic: string;
+  wrong_count: number;
+}
+
+export const getWeakWords = (phoneNumber: string, limit = 20): WeakWord[] => {
   return db.prepare(`
     SELECT wh.german, wh.english, wh.topic, COUNT(fa.id) as wrong_count
     FROM word_history wh
@@ -94,11 +126,11 @@ export const getWeakWords = (phoneNumber: string, limit = 20) => {
     GROUP BY wh.german
     ORDER BY wrong_count DESC, wh.taught_at ASC
     LIMIT ?
-  `).all(phoneNumber, limit);
+  `).all(phoneNumber, limit) as WeakWord[];
 };
 
-export const getDailyRequests = (phoneNumber: string, date: string) => {
-  const row = db.prepare('SELECT request_count FROM daily_requests WHERE phone_number = ? AND request_date = ?').get(phoneNumber, date);
+export const getDailyRequests = (phoneNumber: string, date: string): number => {
+  const row = db.prepare('SELECT request_count FROM daily_requests WHERE phone_number = ? AND request_date = ?').get(phoneNumber, date) as DailyRequest | undefined;
   return row?.request_count ?? 0;
 };
 

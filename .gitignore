@@ -1,7 +1,42 @@
+# WhatsApp Authentication & Cache
 .wwebjs_auth/
 .wwebjs_cache/
-node_modules/
-data/database.sqlite
-.env
-dist/
 wwebjs_auth*
+
+# Environment & Secrets  
+.env
+.env.local
+.env.production
+
+# Database
+data/database.sqlite
+data/database.sqlite-*
+
+# Dependencies
+node_modules/
+
+# Build Output
+dist/
+build/
+
+# Logs
+*.log
+npm-debug.log*
+logs/
+
+# Runtime
+.DS_Store
+Thumbs.db
+*.pid
+*.pid.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+*.tmp
+*.temp
+.cache/

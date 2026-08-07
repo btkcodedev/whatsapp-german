@@ -8,7 +8,9 @@
     "start": "tsx src/index.ts",
     "dev": "nodemon --watch src --ext ts --exec tsx src/bot.ts",
     "setup": "tsx src/setup.ts",
-    "bot": "tsx src/bot.ts"
+    "bot": "tsx src/bot.ts",
+    "reauth": "node scripts/reauth.js",
+    "check": "node scripts/check-health.js"
   },
   "keywords": [],
   "author": "",
