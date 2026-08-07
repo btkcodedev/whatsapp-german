@@ -1,6 +1,6 @@
 # WhatsApp Authentication & Cache
-.wwebjs_auth/*
-!.wwebjs_auth/.gitkeep
+# .wwebjs_auth/* — Session is now committed to git
+# !.wwebjs_auth/.gitkeep
 .wwebjs_cache/
 # wwebjs_auth*
 
