@@ -1,5 +1,8 @@
 name: Daily German Word
 
+permissions:
+  contents: read   # the job only reads the repo and calls external APIs; no write access needed
+
 on:
   schedule:
     # 8:00 AM IST = 2:30 AM UTC
