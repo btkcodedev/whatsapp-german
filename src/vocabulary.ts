@@ -81,7 +81,7 @@ export async function generateWord(
 
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({
-    model: 'gemini-1.5-flash',
+    model: 'gemini-3.7-flash',
     generationConfig: { responseMimeType: 'application/json' },
   });
 
@@ -166,7 +166,7 @@ export async function generateFlashcard(
 
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({
-    model: 'gemini-1.5-flash',
+    model: 'gemini-3.7-flash',
     generationConfig: { responseMimeType: 'application/json' },
   });
 
