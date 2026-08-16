@@ -69,6 +69,49 @@ const TOPICS: Record<CEFRLevel, string[]> = {
   ],
 };
 
+// ─── Gemini call with automatic model fallback ─────────────────────────────
+// Free-tier model IDs get retired/renamed periodically (gemini-1.5-flash
+// 404'd on us). Try the newest first; if it's unavailable, rate-limited, or
+// retired, fall through to the next rather than hard-failing the whole run.
+// Ordered newest → most conservative/likely-to-stay-available.
+const MODEL_FALLBACKS = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-flash'];
+
+async function generateJSON<T>(prompt: string): Promise<T> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY is not set.');
+  const genAI = new GoogleGenerativeAI(apiKey);
+
+  let lastError: unknown;
+  for (const modelName of MODEL_FALLBACKS) {
+    try {
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        generationConfig: { responseMimeType: 'application/json' },
+      });
+      const result = await model.generateContent(prompt);
+      const raw = result.response.text();
+      try {
+        return JSON.parse(raw);
+      } catch {
+        const match = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+        if (match) return JSON.parse(match[1]);
+        throw new Error(`Could not parse Gemini response: ${raw.substring(0, 200)}`);
+      }
+    } catch (err: any) {
+      const status = err?.status ?? err?.response?.status;
+      const message: string = err?.message ?? String(err);
+      // Only fall through on "this model isn't usable right now" errors —
+      // not found/retired, unsupported, or rate/quota limited. A JSON parse
+      // failure means the model answered fine, so retrying elsewhere won't help.
+      const isModelIssue = status === 404 || status === 429 || status === 503 || /not found|not supported|quota/i.test(message);
+      if (!isModelIssue) throw err;
+      lastError = err;
+      console.warn(`⚠️ ${modelName} unavailable (${message}), trying next model...`);
+    }
+  }
+  throw lastError;
+}
+
 // ─── Vocabulary generation with Gemini memory ──────────────────────────────
 
 export async function generateWord(
@@ -76,15 +119,6 @@ export async function generateWord(
   level: CEFRLevel,
   wordHistory: Array<{ german: string; english: string; topic: string; day_number: number }>
 ): Promise<WordOfTheDay> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY is not set.');
-
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-3.7-flash',
-    generationConfig: { responseMimeType: 'application/json' },
-  });
-
   const topics = TOPICS[level];
   const todayTopic = topics[(dayNumber - 1) % topics.length];
   const usedGerman = wordHistory.map((w) => w.german);
@@ -138,16 +172,7 @@ Respond with ONLY a valid JSON object matching this schema exactly:
 }
 `;
 
-  const result = await model.generateContent(prompt);
-  const raw = result.response.text();
-
-  try {
-    return JSON.parse(raw);
-  } catch {
-    const match = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (match) return JSON.parse(match[1]);
-    throw new Error(`Could not parse Gemini response: ${raw.substring(0, 200)}`);
-  }
+  return generateJSON<WordOfTheDay>(prompt);
 }
 
 // ─── Flashcard generation ──────────────────────────────────────────────────
@@ -157,18 +182,9 @@ export async function generateFlashcard(
   weakWords: Array<{ german: string; english: string; wrong_count: number }>,
   level: CEFRLevel
 ): Promise<FlashCard> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY is not set.');
-
   if (wordHistory.length === 0) {
     throw new Error('No words learned yet — learn some words first!');
   }
-
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-3.7-flash',
-    generationConfig: { responseMimeType: 'application/json' },
-  });
 
   // Prioritize weak words, fall back to random from history
   const targetPool =
@@ -197,15 +213,7 @@ Respond ONLY with a JSON object:
 }
 `;
 
-  const result = await model.generateContent(prompt);
-  const raw = result.response.text();
-  try {
-    return JSON.parse(raw);
-  } catch {
-    const match = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (match) return JSON.parse(match[1]);
-    throw new Error(`Could not parse flashcard response: ${raw.substring(0, 200)}`);
-  }
+  return generateJSON<FlashCard>(prompt);
 }
 
 // ─── Message formatters ────────────────────────────────────────────────────
