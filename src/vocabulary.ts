@@ -23,15 +23,6 @@ export interface WordOfTheDay {
   callbackToPastWord?: string;
 }
 
-export interface FlashCard {
-  german: string;
-  english: string;
-  question: string;     // e.g. "How do you say 'apple' in German?"
-  hint: string;         // e.g. "It's a fruit 🍎"
-  answer: string;       // e.g. "der Apfel"
-  explanation: string;  // e.g. "You learned this on Day 3! 'Apfel' sounds like 'apple'."
-}
-
 // ─── Level-specific topic trees ────────────────────────────────────────────
 
 const TOPICS: Record<CEFRLevel, string[]> = {
@@ -175,84 +166,23 @@ Respond with ONLY a valid JSON object matching this schema exactly:
   return generateJSON<WordOfTheDay>(prompt);
 }
 
-// ─── Flashcard generation ──────────────────────────────────────────────────
-
-export async function generateFlashcard(
-  wordHistory: Array<{ german: string; english: string; topic: string; day_number: number }>,
-  weakWords: Array<{ german: string; english: string; wrong_count: number }>,
-  level: CEFRLevel
-): Promise<FlashCard> {
-  if (wordHistory.length === 0) {
-    throw new Error('No words learned yet — learn some words first!');
-  }
-
-  // Prioritize weak words, fall back to random from history
-  const targetPool =
-    weakWords.length > 0
-      ? weakWords
-      : wordHistory.slice(-20);
-
-  const target = targetPool[Math.floor(Math.random() * targetPool.length)];
-
-  const prompt = `
-You are a German language teacher creating a flashcard quiz for a ${level}-level learner.
-
-Target word: "${target.german}" = "${target.english}"
-Learner's vocabulary (words they know): ${wordHistory.map((w) => w.german).join(', ')}
-
-Create a short, engaging quiz question. Vary the question type (translation, fill-in-the-blank, choose the article, context clue, etc.).
-
-Respond ONLY with a JSON object:
-{
-  "german": "${target.german}",
-  "english": "${target.english}",
-  "question": "The quiz question for the learner (in English or German depending on the quiz type)",
-  "hint": "A small hint (an emoji or 1-3 word clue, not the answer)",
-  "answer": "The correct answer",
-  "explanation": "A short explanation after answering — reference when they learned it and reinforce the memory tip"
-}
-`;
-
-  return generateJSON<FlashCard>(prompt);
-}
-
-// ─── Message formatters ────────────────────────────────────────────────────
+// ─── Message formatting ─────────────────────────────────────────────────────
+// Plain dictionary-entry style: this is a one-way broadcast channel with no
+// bot behind it to reply to, so the message shouldn't imply interactivity.
 
 export function formatWordMessage(word: WordOfTheDay): string {
   const display = word.article ? `${word.article} ${word.german}` : word.german;
-  const levelBadge = `[${word.level}]`;
-  const callback = word.callbackToPastWord
-    ? `\n🔗 ${word.callbackToPastWord}`
-    : '';
+  const callback = word.callbackToPastWord ? `\nRelated: ${word.callbackToPastWord}` : '';
 
   return (
-    `☀️ *Guten Morgen! — Word #${word.dayNumber}* ${levelBadge}\n` +
-    `📚 Topic: ${word.topic}\n\n` +
-    `🇩🇪 *${display}* _(${word.partOfSpeech})_\n` +
-    `🔊 /${word.pronunciation}/\n` +
-    `🇬🇧 ${word.english}\n\n` +
-    `📝 _${word.example}_\n` +
-    `   → ${word.exampleTranslation}\n\n` +
-    `💡 *Tip:* ${word.memoryTip}` +
-    callback +
-    `\n\n📲 DM the bot: *more* (extra words) | *flashcard* (quiz) | *level* (change level)`
+    `*Word of the Day — Day ${word.dayNumber}* (${word.level})\n` +
+    `Topic: ${word.topic}\n\n` +
+    `*${display}* — ${word.partOfSpeech}\n` +
+    `Pronunciation: /${word.pronunciation}/\n` +
+    `Meaning: ${word.english}\n\n` +
+    `Example: "${word.example}"\n` +
+    `Translation: "${word.exampleTranslation}"\n\n` +
+    `Note: ${word.memoryTip}` +
+    callback
   );
-}
-
-export function formatFlashcardQuestion(card: FlashCard): string {
-  return (
-    `🃏 *Flashcard Time!*\n\n` +
-    `❓ ${card.question}\n\n` +
-    `💡 Hint: ${card.hint}\n\n` +
-    `Reply with your answer!`
-  );
-}
-
-export function formatFlashcardResult(card: FlashCard, userAnswer: string): string {
-  const normalized = (s: string) => s.trim().toLowerCase().replace(/[^\w\säöü]/gi, '');
-  const correct = normalized(userAnswer) === normalized(card.answer);
-
-  return correct
-    ? `✅ *Richtig!* (Correct!)\n\n📖 ${card.explanation}`
-    : `❌ *Falsch.* The answer was: *${card.answer}*\n\n📖 ${card.explanation}`;
 }
