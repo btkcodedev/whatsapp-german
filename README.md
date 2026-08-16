@@ -6,15 +6,15 @@ Posts one AI-generated German vocabulary word (CEFR A1 by default) to a WhatsApp
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│  GitHub Actions (cron, daily)                               │
-│                                                               │
-│  1. Checkout repo (fresh runner, no persistent disk)        │
-│  2. npm start → src/index.ts                                │
-│       - Load WhatsApp session from MongoDB (Baileys)        │
-│       - Ask Gemini for today's word (CEFR-aware, no repeats)│
-│       - Post it to the WhatsApp Channel                     │
-│       - Save updated progress back to MongoDB               │
-│  3. Runner is destroyed — nothing persists locally           │
+│  GitHub Actions (cron, daily)                              │
+│                                                            │
+│  1. Checkout repo (fresh runner, no persistent disk)       │
+│  2. npm start → src/index.ts                               │
+│       - Load WhatsApp session from MongoDB (Baileys)       │
+│       - Ask Gemini for today's word (CEFR-aware)           │
+│       - Post it to the WhatsApp Channel                    │
+│       - Save updated progress back to MongoDB              │
+│  3. Runner is destroyed — nothing persists locally         │
 └────────────────────────────────────────────────────────────┘
                           │
                           ▼
