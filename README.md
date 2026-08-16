@@ -2,6 +2,8 @@
 
 Posts one AI-generated German vocabulary word (CEFR A1 by default) to a WhatsApp Channel every morning — fully automated, fully free to run.
 
+If you would like to read the pain of architecting this, do check out my [Medium article](https://medium.com/@btkcodedev/i-just-wanted-a-whatsapp-channel-that-teaches-me-one-german-word-a-day-1f6ec3a56278): 
+
 ## Architecture
 
 ```
