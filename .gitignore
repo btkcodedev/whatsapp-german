@@ -1,17 +1,7 @@
-# WhatsApp Authentication & Cache
-# .wwebjs_auth/* — Session is now committed to git
-# !.wwebjs_auth/.gitkeep
-.wwebjs_cache/
-# wwebjs_auth*
-
-# Environment & Secrets  
+# Environment & Secrets
 .env
 .env.local
 .env.production
-
-# Database
-data/database.sqlite
-data/database.sqlite-*
 
 # Dependencies
 node_modules/

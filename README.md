@@ -1,309 +1,118 @@
-# 🇩🇪 WhatsApp German Learning Bot
+# 🇩🇪 WhatsApp German Word Channel
 
-An intelligent WhatsApp bot that teaches German vocabulary through daily words and interactive features. Built with TypeScript, powered by Google Gemini AI, and designed for CEFR-level learning (A1-C2).
-
-## 🚀 Features
-
-### 📅 Daily Word Channel
-- **Automated daily posts** to your WhatsApp channel via GitHub Actions
-- **CEFR-level appropriate** vocabulary (A1 through C2)
-- **Smart memory system** - never repeats words, builds on previous lessons
-- **Rich content**: pronunciation, examples, memory tips, and cultural context
-
-### 💬 Interactive DM Bot
-- **Personalized onboarding** - users select their CEFR level
-- **Extra words on demand** - "more" command (max 3/day per user)
-- **AI-powered flashcards** - spaced repetition quizzes on learned words
-- **Level management** - users can change their learning level anytime
-- **Progress tracking** - SQLite database stores user history and performance
+Posts one AI-generated German vocabulary word (CEFR A1 by default) to a WhatsApp Channel every morning — fully automated, fully free to run.
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                  Render/Railway/VPS                         │
-│             Single Bot Process (24/7)                       │
-│                                                             │
-│  ┌────────────────────────────────────────────────────┐    │
-│  │  📅 Scheduled Channel Posts (node-cron)            │    │
-│  │     • Posts daily at 8:00 AM IST                   │    │
-│  │     • AI-generated CEFR-appropriate words          │    │
-│  │                                                     │    │
-│  │  💬 Interactive DM Bot (event-driven)              │    │
-│  │     • User onboarding & level selection            │    │
-│  │     • Extra words on demand                        │    │
-│  │     • AI-powered flashcards                        │    │
-│  │                                                     │    │
-│  │  💾 Persistent Session                             │    │
-│  │     • WhatsApp auth stored on disk                 │    │
-│  │     • SQLite database for user data                │    │
-│  └────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│  GitHub Actions (cron, daily)                               │
+│                                                               │
+│  1. Checkout repo (fresh runner, no persistent disk)        │
+│  2. npm start → src/index.ts                                │
+│       • Load WhatsApp session from MongoDB (Baileys)        │
+│       • Ask Gemini for today's word (CEFR-aware, no repeats)│
+│       • Post it to the WhatsApp Channel                     │
+│       • Save updated progress back to MongoDB               │
+│  3. Runner is destroyed — nothing persists locally           │
+└────────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+                 MongoDB Atlas (free M0)
+          • WhatsApp session (a few KB of creds)
+          • Channel progress (current day, words used)
 ```
+
+No server to keep running, no Docker image, no Render/Railway hosting. The job takes about a minute a day.
 
 ## 🛠️ Tech Stack
 
-- **Runtime**: Node.js 20 + TypeScript
-- **WhatsApp**: whatsapp-web.js with Puppeteer
+- **Runtime**: Node.js 20 + TypeScript (`tsx`)
+- **WhatsApp**: [Baileys](https://github.com/WhiskeySockets/Baileys) — talks the WhatsApp multi-device protocol directly over WebSocket, no headless Chromium
 - **AI**: Google Gemini 1.5 Flash (free tier)
-- **Database**: SQLite with better-sqlite3
-- **Deployment**: Render.com or Railway.app (single service)
-- **Scheduling**: node-cron (built-in)
-- **Docker**: Alpine-based container for production
+- **Session + progress storage**: MongoDB Atlas free tier (Mongoose)
+- **Scheduling**: GitHub Actions cron (free)
 
 ## 📋 Prerequisites
 
-Before you begin, you'll need:
+1. **Dedicated WhatsApp number** (don't use your personal one — automation risks a ban)
+2. **Google Gemini API key** — free at [aistudio.google.com](https://aistudio.google.com/app/apikey)
+3. **MongoDB Atlas free cluster (M0)** — free forever at [mongodb.com/cloud/atlas/register](https://www.mongodb.com/cloud/atlas/register)
+4. **Node.js 20+** for the one-time local link step
 
-1. **Dedicated WhatsApp number** (don't use your personal number)
-2. **Google Gemini API key** (free at [aistudio.google.com](https://aistudio.google.com))
-3. **Render.com or Railway.app account** (free tier available)
-4. **Node.js 20+** for local development
+## 🚀 Setup
 
-## 📚 Documentation
-
-- **[Production Deployment Guide](docs/PRODUCTION-DEPLOYMENT.md)** - Complete step-by-step deployment instructions
-- **[Session Persistence Guide](docs/SESSION-PERSISTENCE.md)** - How WhatsApp authentication works and session management strategies
-
-## 🚀 Quick Start
-
-### 1. Repository Setup
+### 1. Install
 
 ```bash
-# Clone the repository
-git clone <your-repo-url>
-cd whatsapp-german
-
-# Install dependencies
 npm install
-
-# Copy environment template
 cp .env.example .env
 ```
 
-### 2. Environment Configuration
-
-Edit `.env` with your credentials:
+Fill in `.env`:
 
 ```env
-# Get from https://aistudio.google.com/app/apikey
 GEMINI_API_KEY=your_gemini_api_key_here
-
-# Your WhatsApp channel ID (see setup guide below)
-CHANNEL_ID=your_channel_id_here
-
-# Default level for channel posts (A1-C2)
+MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/whatsapp-german
+CHANNEL_ID=your_channel_invite_code_here
 CHANNEL_LEVEL=A1
 ```
 
-### 3. WhatsApp Channel Setup
+### 2. Create the WhatsApp Channel
 
-1. **Create a Channel**: Open WhatsApp → Channels → "+" → "Create channel"
-2. **Name it**: e.g., "🇩🇪 German Daily Words"
-3. **Get Channel ID**: 
-   - Tap channel name → "Invite via link"
-   - Copy the ID from `https://whatsapp.com/channel/XXXXXXXXXX`
-   - Use `XXXXXXXXXX` as your `CHANNEL_ID`
+1. WhatsApp → Channels → "+" → "Create channel", name it (e.g. "🇩🇪 German Daily Words")
+2. Channel name → "Invite via link" → copy the code from `https://whatsapp.com/channel/XXXXXXXXXX`
+3. That `XXXXXXXXXX` is your `CHANNEL_ID`
 
-### 4. Authentication Setup
+### 3. Link WhatsApp — one time only
 
 ```bash
-# Generate WhatsApp session (scan QR code)
-npm run setup
+npm run link
 ```
 
-**Important**: Save the base64 string output - you'll need it for deployment!
+Scan the QR with your dedicated number (Settings → Linked Devices → Link Device). Once it prints `✅ Linked!`, stop it (`Ctrl+C`) — the session is now saved in MongoDB and this step never needs repeating unless the session later gets invalidated (WhatsApp logout, phone offline 14+ days, etc.).
 
-### 5. Render Deployment (ONE SERVICE FOR EVERYTHING)
+### 4. Deploy the daily job
 
-1. **Connect Repository**: Link your GitHub repo to Render
-2. **Configure Service**: 
-   - Type: Web Service
-   - Environment: Docker
-   - Region: Choose closest to your users
-3. **Set Environment Variables**:
-   - `NODE_ENV=production`
-   - `GEMINI_API_KEY` (your API key)
-   - `CHANNEL_ID` (your WhatsApp channel ID)
-   - `CHANNEL_LEVEL` (A1-C2, default A1)
-   - `WWEBJS_AUTH` (base64 string from setup)
-4. **Enable Persistent Disk** (IMPORTANT):
-   - Name: `whatsapp-auth-disk`
-   - Mount path: `/app/.wwebjs_auth`
-   - Size: 1GB
+Add three **GitHub Actions secrets** (repo → Settings → Secrets and variables → Actions):
 
-### 6. First-Time Authentication on Render
+- `GEMINI_API_KEY`
+- `MONGODB_URI` — the **same** URI you used in step 3
+- `CHANNEL_ID`
 
-After deployment, you'll need to authenticate **once**:
+Push. [.github/workflows/daily-word.yml](.github/workflows/daily-word.yml) runs daily at 8:00 AM IST, and can also be triggered manually from the Actions tab (`workflow_dispatch`).
 
-1. **Check Render logs** for QR code instructions
-2. **Or**: Use Render Shell to run `npm run setup`
-3. **Scan QR code** with your dedicated WhatsApp number
-4. Session will persist on the mounted disk
+## 🔄 If the session ever expires
 
-**Alternative**: Set WWEBJS_AUTH initially, service will restore from it.
-
-## 📱 User Commands
-
-Once deployed, users can DM your WhatsApp number:
-
-| Command | Description |
-|---------|-------------|
-| _(first message)_ | Triggers welcome + level selection |
-| `more` | Get extra word at your level (max 3/day) |
-| `flashcard` | AI quiz on your learned words |
-| `level` | Change your CEFR level (A1-C2) |
-| `help` | Show all available commands |
-
-## 🔧 Development
-
-### Local Testing
-
-```bash
-# Test channel posting
-npm run start
-
-# Run DM bot locally
-npm run bot
-
-# Development mode (auto-reload)
-npm run dev
-```
-
-### Maintenance Commands
-
-```bash
-# Re-authenticate when session expires
-npm run reauth
-
-# Check bot health
-RENDER_URL=your-app.onrender.com npm run check
-
-# Backup session locally
-node scripts/backup-session.js
-```
-
-### Database
-
-The bot uses SQLite with these tables:
-
-- `users` - User profiles and learning progress
-- `word_history` - Words learned by each user
-- `daily_requests` - Rate limiting for "more" command
-- `flashcard_attempts` - Quiz performance tracking
-
-### Adding New Features
-
-Key files to modify:
-
-- `src/bot.ts` - DM bot logic and commands
-- `src/vocabulary.ts` - Word generation and CEFR topics
-- `src/index.ts` - Channel posting logic
-- `src/db.ts` - Database operations
+WhatsApp can invalidate a linked session (logout, ~14 days phone-offline, device-limit). When it does, the workflow run fails with a clear message telling you to re-run `npm run link` locally. There's no way around a live phone re-scan when this happens — it's inherent to riding on WhatsApp's personal-account protocol rather than an official bot API.
 
 ## 🌍 CEFR Levels & Topics
 
-The bot supports all Common European Framework levels:
+Change `CHANNEL_LEVEL` in `.env` / the workflow secret to any of `A1` `A2` `B1` `B2` `C1` `C2`. Topics rotate automatically and Gemini is given the list of already-used words so it never repeats one for this channel.
 
-- **A1** (20 topics): Greetings, Numbers, Colors, Family, Food, etc.
-- **A2** (18 topics): Daily Routines, Past Tense, Travel, etc.
-- **B1** (14 topics): Opinions, Subjunctive, Media, etc.
-- **B2** (11 topics): Formal Writing, Economy, Idioms, etc.  
-- **C1** (11 topics): Academic Language, Literature, etc.
-- **C2** (7 topics): Archaic Language, Rhetoric, etc.
+## 📁 Key Files
 
-Topics cycle automatically, ensuring diverse vocabulary exposure.
+- `src/index.ts` — the daily job: generate word → connect → post → save progress
+- `src/link.ts` — one-time local QR link
+- `src/waAuth.ts` — MongoDB-backed Baileys session storage
+- `src/db.ts` — Mongo connection, channel progress, session storage schemas
+- `src/vocabulary.ts` — Gemini prompt + word formatting
 
-## 🔒 Security & Privacy
+## 🔒 Security Notes
 
-- **Dedicated Number**: Always use a separate WhatsApp number
-- **Environment Secrets**: Never commit `.env` or authentication files
-- **Session Management**: WhatsApp sessions are encrypted and base64-encoded
-- **Rate Limiting**: Built-in limits prevent spam and abuse
-- **Local Database**: User data stored locally, not shared with third parties
-
-## 🔄 Session Management & Re-Authentication
-
-**Important**: WhatsApp Web sessions expire every 1-2 months. When this happens:
-
-```bash
-# 1. Run re-authentication locally (scan QR code)
-npm run reauth
-
-# 2. Update the new WWEBJS_AUTH token in:
-#    - GitHub Secrets (for Actions)
-#    - Render Environment Variables (for DM bot)
-
-# 3. Restart/redeploy services
-```
-
-**Why local?** QR codes can only be scanned on a screen you can see. Production servers can't display QR codes, so re-authentication must happen on your local machine.
-
-**How to minimize re-auth frequency:**
-- ✅ Use Render with persistent disk (sessions last 1-2 months)
-- ✅ Keep bot actively used (extends session life)
-- ✅ Consider VPS deployment for longer sessions (3-6 months)
-
-See [docs/SESSION-PERSISTENCE.md](docs/SESSION-PERSISTENCE.md) for detailed strategies.
-
----
+- Never commit `.env` — it's gitignored
+- The WhatsApp session lives only in your MongoDB cluster and GitHub Actions secrets, never in the repo
+- Use a dedicated WhatsApp number, not your personal one
 
 ## 🆘 Troubleshooting
 
-### Common Issues
-
-| Problem | Solution |
-|---------|----------|
-| "GEMINI_API_KEY not set" | Add API key to environment variables |
-| "CHANNEL_ID not set" | Add channel ID to GitHub secrets/Render env |
-| QR code not appearing | Run `npm run setup` locally |
-| "Auth failure" | Delete `.wwebjs_auth/`, re-run setup |
-| Bot not responding | Check Render logs, verify WWEBJS_AUTH |
-| GitHub Action failing | Check secrets, verify GH_PAT permissions |
-
-### Logs & Debugging
-
-```bash
-# Check local logs
-npm run bot
-
-# Render logs
-# Visit your service dashboard → Logs tab
-
-# GitHub Actions logs  
-# Visit your repository → Actions → latest workflow run
-```
-
-## 📊 Monitoring
-
-### GitHub Actions
-- Daily runs at 8:00 AM IST
-- Manual trigger available via "Run workflow"
-- Automatic progress tracking in `data/progress.json`
-
-### Render Health Check
-- Endpoint: `https://your-app.onrender.com/health`
-- Monitors: uptime, service status, timestamp
-- Auto-restart on failure
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality  
-4. Ensure TypeScript compilation passes
-5. Submit a pull request
-
-## 📄 License
-
-ISC License - see `package.json` for details.
-
-## 🙋‍♂️ Support
-
-- **Issues**: Use GitHub Issues for bug reports
-- **Features**: Submit feature requests via GitHub Discussions
-- **Documentation**: Check `DEPLOYMENT.md` for detailed deployment guide
+| Problem | Cause / fix |
+|---|---|
+| `MONGODB_URI is not set` | Add it to `.env` locally or as a GitHub Actions secret |
+| `No linked WhatsApp session found in MongoDB` | Run `npm run link` locally (with the same `MONGODB_URI`) |
+| `Session was logged out` | Re-run `npm run link` to re-scan |
+| Workflow doesn't fire on schedule | GitHub Actions cron can lag up to ~15 min on free runners, or the repo went inactive — trigger manually via Actions tab to confirm the job itself works |
 
 ---
 
-**Built with ❤️ for German language learners worldwide**
+**Built for German language learners worldwide** 🇩🇪

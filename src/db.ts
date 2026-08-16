@@ -1,147 +1,65 @@
-import Database from 'better-sqlite3';
-import path from 'path';
-import fs from 'fs';
+import mongoose, { Schema } from 'mongoose';
 
-const dbDir = path.resolve('data');
-if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
-
-const dbPath = path.resolve(dbDir, 'database.sqlite');
-
-// better-sqlite3 is synchronous by default — simpler API
-export const db: Database.Database = new Database(dbPath);
-
-console.log('✅ Connected to SQLite database (better-sqlite3).');
-initSchema();
-
-function initSchema() {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      phone_number    TEXT PRIMARY KEY,
-      level           TEXT DEFAULT 'A1',
-      state           TEXT DEFAULT 'NEW',
-      current_day     INTEGER DEFAULT 1,
-      subscribed_at   DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS word_history (
-      id              INTEGER PRIMARY KEY AUTOINCREMENT,
-      phone_number    TEXT,
-      day_number      INTEGER,
-      german          TEXT,
-      english         TEXT,
-      topic           TEXT,
-      level           TEXT,
-      taught_at       DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS daily_requests (
-      phone_number    TEXT,
-      request_date    TEXT,
-      request_count   INTEGER DEFAULT 0,
-      PRIMARY KEY (phone_number, request_date)
-    );
-
-    CREATE TABLE IF NOT EXISTS flashcard_attempts (
-      id              INTEGER PRIMARY KEY AUTOINCREMENT,
-      phone_number    TEXT,
-      german          TEXT,
-      correct         INTEGER,
-      attempted_at    DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
+export async function connectDB() {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) throw new Error("MONGODB_URI is not set in environment variables");
+  if (mongoose.connection.readyState === 1) return; // already connected
+  await mongoose.connect(uri);
+  console.log('✅ Connected to MongoDB.');
 }
 
-// ─── Helpers (synchronous, return values directly) ────────────────────────
+// ─── Channel Progress ───────────────────────────────────────────────────────
+// Tracks which "day" the channel is on and which words have already been
+// used, so the daily GitHub Actions run (a fresh, throwaway checkout every
+// time) knows where it left off. Lives in Mongo instead of a local file
+// because Actions runners have no persistent disk between runs.
 
-interface User {
-  phone_number: string;
-  level: string;
-  state: string;
-  current_day: number;
-  subscribed_at: string;
-}
-
-interface WordHistory {
-  id: number;
-  phone_number: string;
+export interface WordUsed {
+  german: string;
+  english: string;
+  topic: string;
   day_number: number;
-  german: string;
-  english: string;
-  topic: string;
+}
+
+export interface ChannelProgressDoc {
+  _id: string;         // fixed key, e.g. 'channel'
+  currentDay: number;
   level: string;
-  taught_at: string;
+  wordsUsed: WordUsed[];
 }
 
-interface DailyRequest {
-  phone_number: string;
-  request_date: string;
-  request_count: number;
+const ChannelProgressSchema = new Schema<ChannelProgressDoc>({
+  _id: { type: String, required: true },
+  currentDay: { type: Number, default: 1 },
+  level: { type: String, default: 'A1' },
+  wordsUsed: [{ type: Schema.Types.Mixed }],
+});
+
+const ChannelProgressModel = mongoose.model<ChannelProgressDoc>('ChannelProgress', ChannelProgressSchema);
+
+const PROGRESS_KEY = 'channel';
+
+export async function getChannelProgress(defaultLevel: string): Promise<ChannelProgressDoc> {
+  const doc = await ChannelProgressModel.findById(PROGRESS_KEY).lean();
+  if (doc) return doc;
+  return { _id: PROGRESS_KEY, currentDay: 1, level: defaultLevel, wordsUsed: [] };
 }
 
-export const getUser = (phoneNumber: string): User | undefined => {
-  return db.prepare('SELECT * FROM users WHERE phone_number = ?').get(phoneNumber) as User | undefined;
-};
-
-export const createUser = (phoneNumber: string) => {
-  db.prepare("INSERT OR IGNORE INTO users (phone_number, state) VALUES (?, 'NEW')").run(phoneNumber);
-};
-
-export const updateUser = (phoneNumber: string, fields: Record<string, any>) => {
-  const keys = Object.keys(fields);
-  const values = Object.values(fields);
-  const setClause = keys.map((k) => `${k} = ?`).join(', ');
-  db.prepare(`UPDATE users SET ${setClause} WHERE phone_number = ?`).run(...values, phoneNumber);
-};
-
-export const saveWordHistory = (
-  phoneNumber: string,
-  dayNumber: number,
-  german: string,
-  english: string,
-  topic: string,
-  level: string
-) => {
-  db.prepare(
-    'INSERT INTO word_history (phone_number, day_number, german, english, topic, level) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(phoneNumber, dayNumber, german, english, topic, level);
-};
-
-export const getWordHistory = (phoneNumber: string, limit = 100): WordHistory[] => {
-  return db.prepare('SELECT * FROM word_history WHERE phone_number = ? ORDER BY taught_at DESC LIMIT ?').all(phoneNumber, limit) as WordHistory[];
-};
-
-interface WeakWord {
-  german: string;
-  english: string;
-  topic: string;
-  wrong_count: number;
+export async function saveChannelProgress(progress: Omit<ChannelProgressDoc, '_id'>): Promise<void> {
+  await ChannelProgressModel.updateOne(
+    { _id: PROGRESS_KEY },
+    { $set: progress },
+    { upsert: true }
+  );
 }
 
-export const getWeakWords = (phoneNumber: string, limit = 20): WeakWord[] => {
-  return db.prepare(`
-    SELECT wh.german, wh.english, wh.topic, COUNT(fa.id) as wrong_count
-    FROM word_history wh
-    LEFT JOIN flashcard_attempts fa ON fa.german = wh.german AND fa.phone_number = wh.phone_number AND fa.correct = 0
-    WHERE wh.phone_number = ?
-    GROUP BY wh.german
-    ORDER BY wrong_count DESC, wh.taught_at ASC
-    LIMIT ?
-  `).all(phoneNumber, limit) as WeakWord[];
-};
+// ─── Baileys Auth State ─────────────────────────────────────────────────────
+// One document per credential/key entry, keyed the same way Baileys'
+// official useMultiFileAuthState keys its files — just Mongo instead of fs.
 
-export const getDailyRequests = (phoneNumber: string, date: string): number => {
-  const row = db.prepare('SELECT request_count FROM daily_requests WHERE phone_number = ? AND request_date = ?').get(phoneNumber, date) as DailyRequest | undefined;
-  return row?.request_count ?? 0;
-};
+const WaAuthSchema = new Schema({
+  _id: { type: String, required: true },
+  value: { type: String, required: true }, // JSON via Baileys' BufferJSON
+});
 
-export const incrementDailyRequests = (phoneNumber: string, date: string) => {
-  db.prepare(`
-    INSERT INTO daily_requests (phone_number, request_date, request_count)
-    VALUES (?, ?, 1)
-    ON CONFLICT(phone_number, request_date) DO UPDATE SET request_count = request_count + 1
-  `).run(phoneNumber, date);
-};
-
-export const saveFlashcardAttempt = (phoneNumber: string, german: string, correct: boolean) => {
-  db.prepare('INSERT INTO flashcard_attempts (phone_number, german, correct) VALUES (?, ?, ?)').run(phoneNumber, german, correct ? 1 : 0);
-};
+export const WaAuthModel = mongoose.model('WaAuth', WaAuthSchema);
