@@ -32,6 +32,7 @@ No server to keep running, no Docker image, no Render/Railway hosting. The job t
 - **Runtime**: Node.js 20 + TypeScript (`tsx`)
 - **WhatsApp**: [Baileys](https://github.com/WhiskeySockets/Baileys) — talks the WhatsApp multi-device protocol directly over WebSocket, no headless Chromium
 - **AI**: Google Gemini, Flash family — tries `gemini-3.7-flash` first and falls back through older Flash models if one is retired or overloaded (see `MODEL_FALLBACKS` in `src/vocabulary.ts`)
+- **Pronunciation audio**: sent as a voice note after the word. First choice is a real native-speaker recording of that exact word from [German Wiktionary](https://de.wiktionary.org) / Wikimedia Commons; when there's no recording it falls back to [Piper](https://github.com/OHF-Voice/piper1-gpl), an offline neural TTS that runs inside the job (no API, no key, no cost) speaking the exact word. Both paths transcode to Ogg/Opus with `ffmpeg`. Fully best-effort — if every path fails, the text still posts. Needs `ffmpeg` on PATH (preinstalled on GitHub's runner); Piper is installed by the workflow, or `pip install piper-tts` locally to hear the fallback on local runs
 - **Session + progress storage**: MongoDB Atlas free tier (Mongoose)
 - **Scheduling**: GitHub Actions cron (free)
 
@@ -95,11 +96,12 @@ Change `CHANNEL_LEVEL` in `.env` / the workflow secret to any of `A1` `A2` `B1` 
 
 ## Key Files
 
-- `src/index.ts` — the daily job: generate word → connect → post → save progress
+- `src/index.ts` — the daily job: generate word → connect → post text + pronunciation → save progress → optional DM copy
 - `src/link.ts` — one-time local QR link
 - `src/waAuth.ts` — MongoDB-backed Baileys session storage
 - `src/db.ts` — Mongo connection, channel progress, session storage schemas
 - `src/vocabulary.ts` — Gemini prompt, model-fallback chain, word formatting
+- `src/pronunciation.ts` — Wiktionary/Commons audio lookup + Ogg/Opus transcode
 
 ## Security Notes
 
@@ -114,6 +116,7 @@ Change `CHANNEL_LEVEL` in `.env` / the workflow secret to any of `A1` `A2` `B1` 
 | `MONGODB_URI is not set` | Add it to `.env` locally or as a GitHub Actions secret |
 | `No linked WhatsApp session found in MongoDB` | Run `npm run link` locally (with the same `MONGODB_URI`) |
 | `Session was logged out` | Re-run `npm run link` to re-scan |
+| No pronunciation audio arrives | Both `ffmpeg` and Piper are unavailable, or the word's audio failed to send. Wiktionary covers most words; Piper covers the rest. The text still posts regardless |
 | `models/... is not found` | Every entry in `MODEL_FALLBACKS` (src/vocabulary.ts) is dead — check current free-tier model IDs at ai.google.dev and update the list |
 | Workflow doesn't fire on schedule | GitHub Actions cron can lag up to ~15 min on free runners, or the repo went inactive — trigger manually via Actions tab to confirm the job itself works |
 

@@ -3,20 +3,35 @@
  *
  * Run by a GitHub Actions cron every morning. Connects to WhatsApp using
  * the session saved by `npm run link`, generates the Word of the Day via
- * Gemini, posts it to the WhatsApp Channel, then disconnects. One shot,
- * no long-running server needed.
+ * Gemini, posts it to the WhatsApp Channel with a native-speaker
+ * pronunciation voice note, then disconnects. One shot, no long-running
+ * server needed.
  *
  * Optional: set DM_NUMBER (comma-separated, full international format, e.g.
- * 918111891130) to also receive the same message as a direct message. This
- * is best-effort only — a DM failure never fails the channel post.
+ * 918111891130) to also receive the word and pronunciation as a direct
+ * message. Everything past the channel text + progress save is best-effort:
+ * a DM, pronunciation, or transcode failure never fails the channel post.
  */
 import { makeWASocket, DisconnectReason } from '@whiskeysockets/baileys';
 import dotenv from 'dotenv';
 import { connectDB, getChannelProgress, saveChannelProgress } from './db';
 import { useMongoAuthState } from './waAuth';
 import { CEFRLevel, generateWord, formatWordMessage } from './vocabulary';
+import { getPronunciationOpus } from './pronunciation';
 
 dotenv.config();
+
+const errMsg = (e: unknown) => (e as any)?.message || String(e);
+
+/** Reject if `p` hasn't settled within `ms`, so one bad send can't stall the run. */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`send timed out after ${ms}ms`)), ms);
+  });
+  p.catch(() => {}); // keep a late rejection from going unhandled after the race
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
+}
 
 async function postWordOfTheDay(): Promise<void> {
   const CHANNEL_INVITE = process.env.CHANNEL_ID;
@@ -69,22 +84,54 @@ async function postWordOfTheDay(): Promise<void> {
             ],
           });
 
-          // Optional DM copy. The channel post and progress save above are
-          // already committed, so everything here is best-effort: each send
-          // is guarded and time-boxed so it can never fail or stall the run.
+          // Everything below is best-effort. The channel post and progress
+          // save above are already committed, so a failure here must never
+          // reject: sends are wrapped and time-boxed so they cannot stall.
+
+          // Native-speaker pronunciation clip (may be null: no recording for
+          // this word, or ffmpeg missing). Fetched once, reused for all targets.
+          const audio = await getPronunciationOpus(word.german, word.example).catch(() => null);
+
+          const sendTo = async (jid: string, label: string) => {
+            try {
+              await withTimeout(sock.sendMessage(jid, { text: message }), 15_000);
+              console.log(`Sent word to ${label}.`);
+            } catch (err) {
+              console.warn(`Word send to ${label} failed (channel post unaffected): ${errMsg(err)}`);
+              return; // no point trying the audio if the text failed
+            }
+            if (!audio) return;
+            try {
+              await withTimeout(
+                sock.sendMessage(jid, { audio, mimetype: 'audio/ogg; codecs=opus', ptt: true }),
+                20_000
+              );
+              console.log(`Sent pronunciation to ${label}.`);
+            } catch (err) {
+              console.warn(`Pronunciation send to ${label} failed: ${errMsg(err)}`);
+            }
+          };
+
+          // Pronunciation clip to the channel (the text there is already sent
+          // above; this just adds the audio for channel followers).
+          if (audio) {
+            try {
+              await withTimeout(
+                sock.sendMessage(meta.id, { audio, mimetype: 'audio/ogg; codecs=opus', ptt: true }),
+                20_000
+              );
+              console.log('Sent pronunciation to channel.');
+            } catch (err) {
+              console.warn(`Pronunciation send to channel failed: ${errMsg(err)}`);
+            }
+          }
+
+          // Optional DM copy (word + pronunciation) to each DM_NUMBER.
           const dmRaw = process.env.DM_NUMBER;
           if (dmRaw) {
             const dmNumbers = dmRaw.split(',').map((n) => n.replace(/[^0-9]/g, '')).filter(Boolean);
             for (const num of dmNumbers) {
-              try {
-                await Promise.race([
-                  sock.sendMessage(`${num}@s.whatsapp.net`, { text: message }),
-                  new Promise((_, rej) => setTimeout(() => rej(new Error('send timed out')), 15_000)),
-                ]);
-                console.log(`Sent DM copy to ${num}.`);
-              } catch (dmErr) {
-                console.warn(`DM copy to ${num} failed (channel post unaffected): ${(dmErr as any)?.message || dmErr}`);
-              }
+              await sendTo(`${num}@s.whatsapp.net`, num);
             }
           }
 
@@ -109,13 +156,15 @@ async function postWordOfTheDay(): Promise<void> {
       }
     });
 
+    // Generous: connect is usually seconds, but the best-effort pronunciation
+    // path (Wiktionary + Piper + transcode + per-target sends) can add a bit.
     setTimeout(() => {
       if (!settled) {
         settled = true;
         sock.end(undefined);
-        reject(new Error('Timeout: WhatsApp did not connect within 2 minutes'));
+        reject(new Error('Timeout: WhatsApp did not finish within 3 minutes'));
       }
-    }, 120_000);
+    }, 180_000);
   });
 }
 
