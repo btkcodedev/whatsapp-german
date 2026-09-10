@@ -3,8 +3,12 @@
  *
  * Run by a GitHub Actions cron every morning. Connects to WhatsApp using
  * the session saved by `npm run link`, generates the Word of the Day via
- * Gemini, posts it to the WhatsApp Channel, then disconnects. One shot —
+ * Gemini, posts it to the WhatsApp Channel, then disconnects. One shot,
  * no long-running server needed.
+ *
+ * Optional: set DM_NUMBER (comma-separated, full international format, e.g.
+ * 918111891130) to also receive the same message as a direct message. This
+ * is best-effort only — a DM failure never fails the channel post.
  */
 import { makeWASocket, DisconnectReason } from '@whiskeysockets/baileys';
 import dotenv from 'dotenv';
@@ -25,10 +29,10 @@ async function postWordOfTheDay(): Promise<void> {
   const progress = await getChannelProgress(defaultLevel);
   const level: CEFRLevel = (process.env.CHANNEL_LEVEL as CEFRLevel) || (progress.level as CEFRLevel) || 'A1';
 
-  console.log(`🤖 Generating Day ${progress.currentDay} word for level ${level}...`);
+  console.log(`Generating Day ${progress.currentDay} word for level ${level}...`);
   const word = await generateWord(progress.currentDay, level, progress.wordsUsed as any);
   const message = formatWordMessage(word);
-  console.log(`📖 Word: "${word.german}" (${word.english})`);
+  console.log(`Word: "${word.german}" (${word.english})`);
 
   return new Promise<void>((resolve, reject) => {
     const sock = makeWASocket({ auth: state, syncFullHistory: false });
@@ -54,7 +58,7 @@ async function postWordOfTheDay(): Promise<void> {
           if (!meta?.id) throw new Error(`Could not resolve channel from CHANNEL_ID "${CHANNEL_INVITE}"`);
 
           await sock.sendMessage(meta.id, { text: message });
-          console.log('✅ Posted to channel!');
+          console.log('Posted to channel.');
 
           await saveChannelProgress({
             currentDay: progress.currentDay + 1,
@@ -64,6 +68,25 @@ async function postWordOfTheDay(): Promise<void> {
               { german: word.german, english: word.english, topic: word.topic, day_number: progress.currentDay },
             ],
           });
+
+          // Optional DM copy. The channel post and progress save above are
+          // already committed, so everything here is best-effort: each send
+          // is guarded and time-boxed so it can never fail or stall the run.
+          const dmRaw = process.env.DM_NUMBER;
+          if (dmRaw) {
+            const dmNumbers = dmRaw.split(',').map((n) => n.replace(/[^0-9]/g, '')).filter(Boolean);
+            for (const num of dmNumbers) {
+              try {
+                await Promise.race([
+                  sock.sendMessage(`${num}@s.whatsapp.net`, { text: message }),
+                  new Promise((_, rej) => setTimeout(() => rej(new Error('send timed out')), 15_000)),
+                ]);
+                console.log(`Sent DM copy to ${num}.`);
+              } catch (dmErr) {
+                console.warn(`DM copy to ${num} failed (channel post unaffected): ${(dmErr as any)?.message || dmErr}`);
+              }
+            }
+          }
 
           settled = true;
           await sock.end(undefined);
@@ -97,5 +120,5 @@ async function postWordOfTheDay(): Promise<void> {
 }
 
 postWordOfTheDay()
-  .then(() => { console.log('✅ Done!'); process.exit(0); })
-  .catch((err) => { console.error('❌', err.message || err); process.exit(1); });
+  .then(() => { console.log('Done.'); process.exit(0); })
+  .catch((err) => { console.error('Error:', err.message || err); process.exit(1); });

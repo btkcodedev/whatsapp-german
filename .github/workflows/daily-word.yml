@@ -27,3 +27,4 @@ jobs:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
           CHANNEL_LEVEL: A1
+          DM_NUMBER: ${{ secrets.DM_NUMBER }}   # optional: also DM the word to these numbers

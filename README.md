@@ -76,11 +76,12 @@ Scan the QR with your dedicated number (Settings → Linked Devices → Link Dev
 
 ### 4. Deploy the daily job
 
-Add three **GitHub Actions secrets** (repo → Settings → Secrets and variables → Actions):
+Add these **GitHub Actions secrets** (repo → Settings → Secrets and variables → Actions):
 
 - `GEMINI_API_KEY`
 - `MONGODB_URI` — the **same** URI you used in step 3
 - `CHANNEL_ID`
+- `DM_NUMBER` — optional. Digits-only international number(s), comma-separated, to also receive the word as a direct message. Leave unset to post to the channel only.
 
 Push. [.github/workflows/daily-word.yml](.github/workflows/daily-word.yml) runs daily at 8:00 AM IST, and can also be triggered manually from the Actions tab (`workflow_dispatch`).
 
