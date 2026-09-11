@@ -5,8 +5,14 @@ permissions:
 
 on:
   schedule:
-    # 8:00 AM IST = 2:30 AM UTC
-    - cron: '30 2 * * *'
+    # Target trigger: 3:00 AM IST = 21:30 UTC (previous day).
+    # GitHub's `schedule` event has consistently fired this repo's job
+    # 4.5-6.5 hours late (observed: 07:00-08:30 UTC actual vs 02:30 UTC
+    # configured, over 2+ weeks) - a platform-side scheduler delay, not a
+    # bug in this file. This trigger time is shifted earlier specifically
+    # to compensate, so delivery still lands around 8-9:30 AM IST. If the
+    # delay pattern shifts, this will need re-tuning again.
+    - cron: '30 21 * * *'
   workflow_dispatch: {}   # lets you trigger it manually from the Actions tab
 
 jobs:
